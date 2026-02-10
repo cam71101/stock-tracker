@@ -1,0 +1,1895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Aggregator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div id="app" class="container mx-auto px-4 py-8">
+        <header class="mb-8 flex justify-between items-center">
+            <div>
+                <h1 class="text-4xl font-bold text-gray-900 mb-2">Portfolio Aggregator</h1>
+                <p class="text-gray-600">Upload your IBKR and Trading 212 CSVs to view your complete portfolio</p>
+            </div>
+            <button
+                v-if="hasData"
+                @click="clearAllData"
+                class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm"
+            >
+                Clear All Data
+            </button>
+        </header>
+
+        <!-- Upload Section -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <!-- Trading 212 Upload -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800">Trading 212</h2>
+                <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition">
+                    <input
+                        type="file"
+                        @change="handleT212Upload"
+                        accept=".csv"
+                        ref="t212Input"
+                        class="hidden"
+                        id="t212-upload"
+                    >
+                    <label for="t212-upload" class="cursor-pointer">
+                        <svg class="mx-auto h-12 w-12 text-gray-400 mb-3" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                            <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                        <span class="text-sm text-gray-600">Click to upload Trading 212 CSV</span>
+                    </label>
+                </div>
+                <div v-if="t212File" class="mt-4 flex items-center justify-between bg-blue-50 p-3 rounded">
+                    <div class="flex-1">
+                        <p class="text-sm font-medium text-gray-900">{{ t212File.name }}</p>
+                        <p class="text-xs text-gray-500">{{ t212RowCount }} positions loaded</p>
+                    </div>
+                    <button @click="clearT212" class="text-red-600 hover:text-red-800 text-sm font-medium">Clear</button>
+                </div>
+                <div v-if="t212Error" class="mt-4 bg-red-50 border border-red-200 rounded p-3">
+                    <p class="text-sm text-red-800">{{ t212Error }}</p>
+                </div>
+            </div>
+
+            <!-- IBKR Upload -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800">Interactive Brokers</h2>
+                <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition">
+                    <input
+                        type="file"
+                        @change="handleIBKRUpload"
+                        accept=".csv"
+                        ref="ibkrInput"
+                        class="hidden"
+                        id="ibkr-upload"
+                    >
+                    <label for="ibkr-upload" class="cursor-pointer">
+                        <svg class="mx-auto h-12 w-12 text-gray-400 mb-3" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                            <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                        <span class="text-sm text-gray-600">Click to upload IBKR CSV</span>
+                    </label>
+                </div>
+                <div v-if="ibkrFile" class="mt-4 flex items-center justify-between bg-blue-50 p-3 rounded">
+                    <div class="flex-1">
+                        <p class="text-sm font-medium text-gray-900">{{ ibkrFile.name }}</p>
+                        <p class="text-xs text-gray-500">{{ ibkrRowCount }} positions loaded</p>
+                    </div>
+                    <button @click="clearIBKR" class="text-red-600 hover:text-red-800 text-sm font-medium">Clear</button>
+                </div>
+                <div v-if="ibkrError" class="mt-4 bg-red-50 border border-red-200 rounded p-3">
+                    <p class="text-sm text-red-800">{{ ibkrError }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Manual Cash Entry -->
+        <div class="bg-white rounded-lg shadow p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4 text-gray-800">Manual Cash Balances</h2>
+            <div class="space-y-3">
+                <div v-for="(entry, index) in manualCashEntries" :key="index" class="flex gap-3">
+                    <input
+                        v-model="entry.label"
+                        type="text"
+                        placeholder="e.g. Barclays Current, Marcus Savings, Cash ISA"
+                        class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                    <input
+                        v-model.number="entry.valueGBP"
+                        type="number"
+                        placeholder="Amount (GBP)"
+                        step="0.01"
+                        class="w-40 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                    <button
+                        @click="removeManualCash(index)"
+                        class="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition"
+                    >
+                        Remove
+                    </button>
+                </div>
+            </div>
+            <button
+                @click="addManualCash"
+                class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+            >
+                + Add Another
+            </button>
+        </div>
+
+        <!-- Summary Cards -->
+        <div v-if="portfolio.totalNetWorth > 0" class="space-y-6 mb-8">
+            <!-- Total Profit Banner -->
+            <div v-if="portfolio.totalInvested > 0 || portfolio.totalRealisedPL !== 0" class="bg-white rounded-lg shadow p-6">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-500 mb-1">Total Profit/Loss</h3>
+                        <p class="text-3xl font-bold" :class="{
+                            'text-green-600': portfolio.totalPL > 0,
+                            'text-red-600': portfolio.totalPL < 0,
+                            'text-gray-900': portfolio.totalPL === 0
+                        }">
+                            {{ portfolio.totalPL >= 0 ? '+' : '' }}£{{ formatNumber(Math.abs(portfolio.totalPL)) }}
+                            <span class="text-lg font-medium ml-2" :class="{
+                                'text-green-600': portfolio.totalPLPercent > 0,
+                                'text-red-600': portfolio.totalPLPercent < 0,
+                                'text-gray-500': portfolio.totalPLPercent === 0
+                            }">
+                                ({{ portfolio.totalPLPercent >= 0 ? '+' : '' }}{{ portfolio.totalPLPercent.toFixed(2) }}%)
+                            </span>
+                        </p>
+                    </div>
+                    <div class="flex flex-wrap gap-6 text-sm">
+                        <div>
+                            <span class="text-gray-500">Unrealised</span>
+                            <p class="font-semibold" :class="{
+                                'text-green-600': portfolio.totalUnrealisedPL > 0,
+                                'text-red-600': portfolio.totalUnrealisedPL < 0,
+                                'text-gray-900': portfolio.totalUnrealisedPL === 0
+                            }">
+                                {{ portfolio.totalUnrealisedPL >= 0 ? '+' : '' }}£{{ formatNumber(Math.abs(portfolio.totalUnrealisedPL)) }}
+                            </p>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Realised</span>
+                            <p class="font-semibold" :class="{
+                                'text-green-600': portfolio.totalRealisedPL > 0,
+                                'text-red-600': portfolio.totalRealisedPL < 0,
+                                'text-gray-900': portfolio.totalRealisedPL === 0
+                            }">
+                                {{ portfolio.totalRealisedPL >= 0 ? '+' : '' }}£{{ formatNumber(Math.abs(portfolio.totalRealisedPL)) }}
+                            </p>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Total Invested</span>
+                            <p class="font-semibold text-gray-900">£{{ formatNumber(portfolio.totalInvested) }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-gradient-to-br from-blue-600 to-blue-700 rounded-lg shadow-lg p-6 text-white md:col-span-1">
+                    <h3 class="text-sm font-medium text-blue-100 mb-2">Total Net Worth</h3>
+                    <p class="text-4xl font-bold">£{{ formatNumber(portfolio.totalNetWorth) }}</p>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6 md:col-span-2">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Asset Allocation</h3>
+                    <div class="flex items-center gap-6">
+                        <!-- Pie Chart -->
+                        <div class="flex-shrink-0">
+                            <div class="w-32 h-32 rounded-full" :style="{
+                                background: getAssetAllocationGradient()
+                            }"></div>
+                        </div>
+                        <!-- Legend -->
+                        <div class="flex-1 space-y-3">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-4 h-4 bg-green-500 rounded"></div>
+                                    <span class="text-sm font-medium text-gray-700">Cash</span>
+                                </div>
+                                <span class="text-sm font-semibold text-gray-900">£{{ formatNumber(portfolio.cashTotal) }} ({{ portfolio.cashPercentage.toFixed(1) }}%)</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-4 h-4 bg-purple-500 rounded"></div>
+                                    <span class="text-sm font-medium text-gray-700">VUSA</span>
+                                </div>
+                                <span class="text-sm font-semibold text-gray-900">£{{ formatNumber(portfolio.vusaTotal) }} ({{ portfolio.vusaPercentage.toFixed(1) }}%)</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-4 h-4 bg-blue-500 rounded"></div>
+                                    <span class="text-sm font-medium text-gray-700">Other Stocks</span>
+                                </div>
+                                <span class="text-sm font-semibold text-gray-900">£{{ formatNumber(portfolio.otherStocksTotal) }} ({{ portfolio.otherStocksPercentage.toFixed(1) }}%)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Broker Breakdown -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">By Broker</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Trading 212 -->
+                    <div v-if="portfolio.t212Total > 0" class="border border-gray-200 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="font-semibold text-gray-900">Trading 212</h4>
+                            <span class="text-lg font-bold text-purple-600">£{{ formatNumber(portfolio.t212Total) }}</span>
+                        </div>
+                        <div class="text-xs space-y-2">
+                            <div class="flex justify-between items-center">
+                                <span class="text-gray-600">Cash</span>
+                                <span class="font-semibold">£{{ formatNumber(portfolio.t212Cash) }}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-gray-600">Stocks</span>
+                                <span class="font-semibold">£{{ formatNumber(portfolio.t212Stocks) }}</span>
+                            </div>
+                            <div v-if="portfolio.t212Invested > 0" class="pt-2 mt-2 border-t border-gray-200">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-gray-600">Invested</span>
+                                    <span class="font-semibold">£{{ formatNumber(portfolio.t212Invested) }}</span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-gray-600">Unrealised P/L</span>
+                                    <span class="font-semibold" :class="{
+                                        'text-green-600': portfolio.t212PL > 0,
+                                        'text-red-600': portfolio.t212PL < 0
+                                    }">
+                                        {{ portfolio.t212PL >= 0 ? '+' : '' }}£{{ formatNumber(portfolio.t212PL) }}
+                                        ({{ portfolio.t212PL >= 0 ? '+' : '' }}{{ portfolio.t212PLPercent.toFixed(2) }}%)
+                                    </span>
+                                </div>
+                            </div>
+                            <div v-if="portfolio.t212RealisedPL !== 0" class="pt-2 mt-2 border-t border-gray-200">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-gray-600">Realised P/L</span>
+                                    <span class="font-semibold" :class="{
+                                        'text-green-600': portfolio.t212RealisedPL > 0,
+                                        'text-red-600': portfolio.t212RealisedPL < 0
+                                    }">
+                                        {{ portfolio.t212RealisedPL >= 0 ? '+' : '' }}£{{ formatNumber(Math.abs(portfolio.t212RealisedPL)) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Interactive Brokers -->
+                    <div v-if="portfolio.ibkrTotal > 0" class="border border-gray-200 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="font-semibold text-gray-900">Interactive Brokers</h4>
+                            <span class="text-lg font-bold text-blue-600">£{{ formatNumber(portfolio.ibkrTotal) }}</span>
+                        </div>
+                        <div class="text-xs space-y-2">
+                            <div class="flex justify-between items-center">
+                                <span class="text-gray-600">Cash</span>
+                                <span class="font-semibold">£{{ formatNumber(portfolio.ibkrCash) }}</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-gray-600">Stocks</span>
+                                <span class="font-semibold">£{{ formatNumber(portfolio.ibkrStocks) }}</span>
+                            </div>
+                            <div v-if="portfolio.ibkrInvested > 0" class="pt-2 mt-2 border-t border-gray-200">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-gray-600">Invested</span>
+                                    <span class="font-semibold">£{{ formatNumber(portfolio.ibkrInvested) }}</span>
+                                </div>
+                                <div class="flex justify-between items-center">
+                                    <span class="text-gray-600">Unrealised P/L</span>
+                                    <span class="font-semibold" :class="{
+                                        'text-green-600': portfolio.ibkrPL > 0,
+                                        'text-red-600': portfolio.ibkrPL < 0
+                                    }">
+                                        {{ portfolio.ibkrPL >= 0 ? '+' : '' }}£{{ formatNumber(portfolio.ibkrPL) }}
+                                        ({{ portfolio.ibkrPL >= 0 ? '+' : '' }}{{ portfolio.ibkrPLPercent.toFixed(2) }}%)
+                                    </span>
+                                </div>
+                            </div>
+                            <div v-if="portfolio.ibkrRealisedPL !== 0" class="pt-2 mt-2 border-t border-gray-200">
+                                <div class="flex justify-between items-center">
+                                    <span class="text-gray-600">Realised P/L</span>
+                                    <span class="font-semibold" :class="{
+                                        'text-green-600': portfolio.ibkrRealisedPL > 0,
+                                        'text-red-600': portfolio.ibkrRealisedPL < 0
+                                    }">
+                                        {{ portfolio.ibkrRealisedPL >= 0 ? '+' : '' }}£{{ formatNumber(Math.abs(portfolio.ibkrRealisedPL)) }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Manual Cash (if exists) -->
+                    <div v-if="portfolio.manualTotal > 0" class="border border-gray-200 rounded-lg p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="font-semibold text-gray-900">Manual Cash</h4>
+                            <span class="text-lg font-bold text-green-600">£{{ formatNumber(portfolio.manualTotal) }}</span>
+                        </div>
+                        <p class="text-xs text-gray-500">100% Cash</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Target Percentage Reference Table -->
+        <div v-if="targetValue > 0" class="bg-white rounded-lg shadow p-6">
+            <h3 class="text-lg font-semibold text-gray-800 mb-4">Target Value Reference</h3>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div v-for="pct in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]" :key="pct" class="border border-gray-200 rounded-lg p-3">
+                    <div class="text-xs text-gray-500 mb-1">{{ pct }}% of target</div>
+                    <div class="text-lg font-semibold text-gray-900">£{{ formatNumber((targetValue * (100 - (targetCashPercentage || 0)) / 100 * pct) / 100) }}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Holdings Table -->
+        <div v-if="portfolio.holdings.length > 0" class="bg-white rounded-lg shadow overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <h2 class="text-xl font-semibold text-gray-800">Holdings</h2>
+                <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm text-gray-600">Target Value:</label>
+                        <input
+                            v-model.number="targetValue"
+                            type="number"
+                            placeholder="e.g. 100000"
+                            step="1000"
+                            class="w-32 px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm text-gray-600">Target Cash %:</label>
+                        <input
+                            v-model.number="targetCashPercentage"
+                            type="number"
+                            placeholder="e.g. 10"
+                            step="0.1"
+                            min="0"
+                            max="100"
+                            class="w-20 px-3 py-1 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                        <span class="text-sm text-gray-600">%</span>
+                    </div>
+                    <div class="relative">
+                        <button
+                            @click="showColumnSelector = !showColumnSelector"
+                            class="px-3 py-1 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 flex items-center gap-2"
+                        >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                            </svg>
+                            Columns
+                        </button>
+                        <div
+                            v-if="showColumnSelector"
+                            @click.stop
+                            class="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-10 p-3"
+                        >
+                            <div class="text-xs font-semibold text-gray-700 mb-2 pb-2 border-b border-gray-200">
+                                Show/Hide Columns
+                            </div>
+                            <div class="space-y-2 max-h-96 overflow-y-auto">
+                                <label class="flex items-center gap-2 hover:bg-gray-50 p-1 rounded cursor-pointer">
+                                    <input type="checkbox" v-model="visibleColumns.avgPrice" class="rounded">
+                                    <span class="text-sm text-gray-700">Avg Price</span>
+                                </label>
+                                <label class="flex items-center gap-2 hover:bg-gray-50 p-1 rounded cursor-pointer">
+                                    <input type="checkbox" v-model="visibleColumns.invested" class="rounded">
+                                    <span class="text-sm text-gray-700">Invested</span>
+                                </label>
+                                <label class="flex items-center gap-2 hover:bg-gray-50 p-1 rounded cursor-pointer">
+                                    <input type="checkbox" v-model="visibleColumns.pl" class="rounded">
+                                    <span class="text-sm text-gray-700">P/L</span>
+                                </label>
+                                <label class="flex items-center gap-2 hover:bg-gray-50 p-1 rounded cursor-pointer">
+                                    <input type="checkbox" v-model="visibleColumns.plPercent" class="rounded">
+                                    <span class="text-sm text-gray-700">P/L %</span>
+                                </label>
+                                <template v-if="targetValue > 0">
+                                    <div class="text-xs font-semibold text-gray-600 mt-3 mb-1 pt-2 border-t border-gray-100">
+                                        Target Columns
+                                    </div>
+                                    <label class="flex items-center gap-2 hover:bg-gray-50 p-1 rounded cursor-pointer">
+                                        <input type="checkbox" v-model="visibleColumns.percentInvested" class="rounded">
+                                        <span class="text-sm text-gray-700">% Invested</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 hover:bg-gray-50 p-1 rounded cursor-pointer">
+                                        <input type="checkbox" v-model="visibleColumns.targetPercent" class="rounded">
+                                        <span class="text-sm text-gray-700">Target %</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 hover:bg-gray-50 p-1 rounded cursor-pointer">
+                                        <input type="checkbox" v-model="visibleColumns.diffPercent" class="rounded">
+                                        <span class="text-sm text-gray-700">Diff %</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 hover:bg-gray-50 p-1 rounded cursor-pointer">
+                                        <input type="checkbox" v-model="visibleColumns.diffGbp" class="rounded">
+                                        <span class="text-sm text-gray-700">Diff £</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 hover:bg-gray-50 p-1 rounded cursor-pointer">
+                                        <input type="checkbox" v-model="visibleColumns.adjustedTargetPct" class="rounded">
+                                        <span class="text-sm text-gray-700">Adjusted Target %</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 hover:bg-gray-50 p-1 rounded cursor-pointer">
+                                        <input type="checkbox" v-model="visibleColumns.adjustedDiffPercent" class="rounded">
+                                        <span class="text-sm text-gray-700">Adjusted Diff %</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 hover:bg-gray-50 p-1 rounded cursor-pointer">
+                                        <input type="checkbox" v-model="visibleColumns.adjustedDiffGbp" class="rounded">
+                                        <span class="text-sm text-gray-700">Adjusted Diff £</span>
+                                    </label>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th @click="sortBy('symbol')" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                Symbol {{ sortField === 'symbol' ? (sortAsc ? '↑' : '↓') : '' }}
+                            </th>
+                            <th v-if="visibleColumns.avgPrice" @click="sortBy('avgPriceGBP')" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                Avg Price {{ sortField === 'avgPriceGBP' ? (sortAsc ? '↑' : '↓') : '' }}
+                            </th>
+                            <th v-if="visibleColumns.invested" @click="sortBy('costBasisGBP')" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                Invested {{ sortField === 'costBasisGBP' ? (sortAsc ? '↑' : '↓') : '' }}
+                            </th>
+                            <th v-if="visibleColumns.pl" @click="sortBy('unrealizedPL')" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                P/L {{ sortField === 'unrealizedPL' ? (sortAsc ? '↑' : '↓') : '' }}
+                            </th>
+                            <th v-if="visibleColumns.plPercent" @click="sortBy('unrealizedPLPercent')" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                P/L % {{ sortField === 'unrealizedPLPercent' ? (sortAsc ? '↑' : '↓') : '' }}
+                            </th>
+                            <th v-if="targetValue > 0 && visibleColumns.percentInvested" @click="sortBy('percentInvested')" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                % Invested {{ sortField === 'percentInvested' ? (sortAsc ? '↑' : '↓') : '' }}
+                            </th>
+                            <th v-if="targetValue > 0 && visibleColumns.targetPercent" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Target %
+                            </th>
+                            <th v-if="targetValue > 0 && visibleColumns.diffPercent" @click="sortBy('percentDiff')" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                Diff % {{ sortField === 'percentDiff' ? (sortAsc ? '↑' : '↓') : '' }}
+                            </th>
+                            <th v-if="targetValue > 0 && visibleColumns.diffGbp" @click="sortBy('gbpDiff')" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                Diff £ {{ sortField === 'gbpDiff' ? (sortAsc ? '↑' : '↓') : '' }}
+                            </th>
+                            <th v-if="targetValue > 0 && visibleColumns.adjustedTargetPct" @click="sortBy('adjustedTargetPct')" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                Adjusted Target % {{ sortField === 'adjustedTargetPct' ? (sortAsc ? '↑' : '↓') : '' }}
+                            </th>
+                            <th v-if="targetValue > 0 && visibleColumns.adjustedDiffPercent" @click="sortBy('adjustedPercentDiff')" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                Adjusted Diff % {{ sortField === 'adjustedPercentDiff' ? (sortAsc ? '↑' : '↓') : '' }}
+                            </th>
+                            <th v-if="targetValue > 0 && visibleColumns.adjustedDiffGbp" @click="sortBy('adjustedGbpDiff')" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100">
+                                Adjusted Diff £ {{ sortField === 'adjustedGbpDiff' ? (sortAsc ? '↑' : '↓') : '' }}
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Source
+                            </th>
+                            <th class="sticky right-0 px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 shadow-[-2px_0_4px_rgba(0,0,0,0.05)]">
+                                Actions
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        <tr v-for="holding in sortedHoldings" :key="holding.symbol + holding.source" class="hover:bg-gray-50">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {{ holding.symbol }}
+                            </td>
+                            <td v-if="visibleColumns.avgPrice" class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 text-right">
+                                <span v-if="holding.type === 'cash'">-</span>
+                                <span v-else-if="holding.avgPriceGBP">£{{ formatNumber(holding.avgPriceGBP) }}</span>
+                                <span v-else>-</span>
+                            </td>
+                            <td v-if="visibleColumns.invested" class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 text-right">
+                                <span v-if="holding.type === 'cash'">-</span>
+                                <span v-else-if="holding.costBasisGBP">£{{ formatNumber(holding.costBasisGBP) }}</span>
+                                <span v-else>-</span>
+                            </td>
+                            <td v-if="visibleColumns.pl" class="px-6 py-4 whitespace-nowrap text-sm text-right font-medium" :class="{
+                                'text-green-600': holding.unrealizedPL > 0,
+                                'text-red-600': holding.unrealizedPL < 0,
+                                'text-gray-700': holding.unrealizedPL === 0 || holding.type === 'cash'
+                            }">
+                                <span v-if="holding.type === 'cash'">-</span>
+                                <span v-else-if="holding.unrealizedPL !== undefined">
+                                    {{ holding.unrealizedPL >= 0 ? '+' : '' }}£{{ formatNumber(holding.unrealizedPL) }}
+                                </span>
+                                <span v-else>-</span>
+                            </td>
+                            <td v-if="visibleColumns.plPercent" class="px-6 py-4 whitespace-nowrap text-sm text-right font-medium" :class="{
+                                'text-green-600': holding.unrealizedPLPercent > 0,
+                                'text-red-600': holding.unrealizedPLPercent < 0,
+                                'text-gray-700': holding.unrealizedPLPercent === 0 || holding.type === 'cash'
+                            }">
+                                <span v-if="holding.type === 'cash'">-</span>
+                                <span v-else-if="holding.unrealizedPLPercent !== undefined">
+                                    {{ holding.unrealizedPLPercent >= 0 ? '+' : '' }}{{ holding.unrealizedPLPercent.toFixed(2) }}%
+                                </span>
+                                <span v-else>-</span>
+                            </td>
+                            <td v-if="targetValue > 0 && visibleColumns.percentInvested" class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 text-right">
+                                <span v-if="holding.percentInvested !== undefined">{{ holding.percentInvested.toFixed(2) }}%</span>
+                                <span v-else>-</span>
+                            </td>
+                            <td v-if="targetValue > 0 && visibleColumns.targetPercent" class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 text-right">
+                                <input
+                                    v-model.number="targetPercentages[holding.symbol]"
+                                    @change="saveToStorage"
+                                    type="number"
+                                    step="0.1"
+                                    min="0"
+                                    max="100"
+                                    placeholder="0"
+                                    class="w-16 px-2 py-1 text-xs text-right border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+                                >
+                                <span class="ml-1">%</span>
+                            </td>
+                            <td v-if="targetValue > 0 && visibleColumns.diffPercent" class="px-6 py-4 whitespace-nowrap text-sm text-right font-medium" :class="{
+                                'text-red-600': holding.percentDiff < -0.5,
+                                'text-green-600': holding.percentDiff > 0.5,
+                                'text-gray-700': Math.abs(holding.percentDiff) <= 0.5
+                            }">
+                                <span v-if="targetPercentages[holding.symbol]">
+                                    {{ holding.percentDiff >= 0 ? '+' : '' }}{{ holding.percentDiff.toFixed(2) }}%
+                                </span>
+                                <span v-else>-</span>
+                            </td>
+                            <td v-if="targetValue > 0 && visibleColumns.diffGbp" class="px-6 py-4 whitespace-nowrap text-sm text-right font-medium" :class="{
+                                'text-red-600': holding.gbpDiff < -50,
+                                'text-green-600': holding.gbpDiff > 50,
+                                'text-gray-700': Math.abs(holding.gbpDiff) <= 50
+                            }">
+                                <span v-if="targetPercentages[holding.symbol]">
+                                    {{ holding.gbpDiff >= 0 ? '+' : '' }}£{{ formatNumber(Math.abs(holding.gbpDiff)) }}
+                                </span>
+                                <span v-else>-</span>
+                            </td>
+                            <td v-if="targetValue > 0 && visibleColumns.adjustedTargetPct" class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 text-right">
+                                <span v-if="targetPercentages[holding.symbol]">
+                                    {{ holding.adjustedTargetPct.toFixed(2) }}%
+                                </span>
+                                <span v-else>-</span>
+                            </td>
+                            <td v-if="targetValue > 0 && visibleColumns.adjustedDiffPercent" class="px-6 py-4 whitespace-nowrap text-sm text-right font-medium" :class="{
+                                'text-red-600': holding.adjustedPercentDiff < -0.5,
+                                'text-green-600': holding.adjustedPercentDiff > 0.5,
+                                'text-gray-700': Math.abs(holding.adjustedPercentDiff) <= 0.5
+                            }">
+                                <span v-if="targetPercentages[holding.symbol]">
+                                    {{ holding.adjustedPercentDiff >= 0 ? '+' : '' }}{{ holding.adjustedPercentDiff.toFixed(2) }}%
+                                </span>
+                                <span v-else>-</span>
+                            </td>
+                            <td v-if="targetValue > 0 && visibleColumns.adjustedDiffGbp" class="px-6 py-4 whitespace-nowrap text-sm text-right font-medium" :class="{
+                                'text-red-600': holding.adjustedGbpDiff < -50,
+                                'text-green-600': holding.adjustedGbpDiff > 50,
+                                'text-gray-700': Math.abs(holding.adjustedGbpDiff) <= 50
+                            }">
+                                <span v-if="targetPercentages[holding.symbol]">
+                                    {{ holding.adjustedGbpDiff >= 0 ? '+' : '' }}£{{ formatNumber(Math.abs(holding.adjustedGbpDiff)) }}
+                                </span>
+                                <span v-else>-</span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full" :class="{
+                                    'bg-blue-100 text-blue-800': holding.source === 'ibkr',
+                                    'bg-purple-100 text-purple-800': holding.source === 't212',
+                                    'bg-green-100 text-green-800': holding.source === 'manual',
+                                    'bg-gray-100 text-gray-800': holding.source.includes('+')
+                                }">
+                                    {{ holding.source }}
+                                </span>
+                            </td>
+                            <td class="sticky right-0 px-2 py-4 whitespace-nowrap text-sm text-center bg-white shadow-[-2px_0_4px_rgba(0,0,0,0.05)]">
+                                <button
+                                    @click="removeHolding(holding)"
+                                    class="inline-flex items-center justify-center p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 active:bg-red-100 transition-colors"
+                                    title="Remove this holding"
+                                >
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                    </svg>
+                                </button>
+                            </td>
+                        </tr>
+                    </tbody>
+                    <tfoot class="bg-gray-50 border-t-2 border-gray-300">
+                        <tr>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
+                                TOTAL
+                            </td>
+                            <td v-if="visibleColumns.avgPrice" class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 text-right">
+                                -
+                            </td>
+                            <td v-if="visibleColumns.invested" class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 text-right">
+                                £{{ formatNumber(sortedHoldings.reduce((sum, h) => sum + (h.costBasisGBP || 0), 0)) }}
+                            </td>
+                            <td v-if="visibleColumns.pl" class="px-6 py-4 whitespace-nowrap text-sm font-bold text-right" :class="{
+                                'text-green-600': sortedHoldings.reduce((sum, h) => sum + (h.unrealizedPL || 0), 0) > 0,
+                                'text-red-600': sortedHoldings.reduce((sum, h) => sum + (h.unrealizedPL || 0), 0) < 0,
+                                'text-gray-900': sortedHoldings.reduce((sum, h) => sum + (h.unrealizedPL || 0), 0) === 0
+                            }">
+                                <span>
+                                    {{ sortedHoldings.reduce((sum, h) => sum + (h.unrealizedPL || 0), 0) >= 0 ? '+' : '' }}£{{ formatNumber(Math.abs(sortedHoldings.reduce((sum, h) => sum + (h.unrealizedPL || 0), 0))) }}
+                                </span>
+                            </td>
+                            <td v-if="visibleColumns.plPercent" class="px-6 py-4 whitespace-nowrap text-sm font-bold text-right" :class="{
+                                'text-green-600': (sortedHoldings.reduce((sum, h) => sum + (h.unrealizedPL || 0), 0) / sortedHoldings.reduce((sum, h) => sum + (h.costBasisGBP || 0), 0) * 100) > 0,
+                                'text-red-600': (sortedHoldings.reduce((sum, h) => sum + (h.unrealizedPL || 0), 0) / sortedHoldings.reduce((sum, h) => sum + (h.costBasisGBP || 0), 0) * 100) < 0,
+                                'text-gray-900': (sortedHoldings.reduce((sum, h) => sum + (h.unrealizedPL || 0), 0) / sortedHoldings.reduce((sum, h) => sum + (h.costBasisGBP || 0), 0) * 100) === 0
+                            }">
+                                {{ (sortedHoldings.reduce((sum, h) => sum + (h.unrealizedPL || 0), 0) / sortedHoldings.reduce((sum, h) => sum + (h.costBasisGBP || 0), 0) * 100) >= 0 ? '+' : '' }}{{ ((sortedHoldings.reduce((sum, h) => sum + (h.unrealizedPL || 0), 0) / sortedHoldings.reduce((sum, h) => sum + (h.costBasisGBP || 0), 0)) * 100).toFixed(2) }}%
+                            </td>
+                            <td v-if="targetValue > 0 && visibleColumns.percentInvested" class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 text-right">
+                                {{ ((sortedHoldings.reduce((sum, h) => sum + (h.costBasisGBP || 0), 0) / targetValue) * 100).toFixed(2) }}%
+                            </td>
+                            <td v-if="targetValue > 0 && visibleColumns.targetPercent" class="px-6 py-4 whitespace-nowrap text-sm font-bold text-right" :class="{
+                                'text-green-600': Object.values(targetPercentages).reduce((sum, val) => sum + (parseFloat(val) || 0), 0) < 100,
+                                'text-red-600': Object.values(targetPercentages).reduce((sum, val) => sum + (parseFloat(val) || 0), 0) > 100,
+                                'text-gray-900': Object.values(targetPercentages).reduce((sum, val) => sum + (parseFloat(val) || 0), 0) === 100
+                            }">
+                                {{ Object.values(targetPercentages).reduce((sum, val) => sum + (parseFloat(val) || 0), 0).toFixed(2) }}%
+                            </td>
+                            <td v-if="targetValue > 0 && visibleColumns.diffPercent" class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 text-right">
+                                -
+                            </td>
+                            <td v-if="targetValue > 0 && visibleColumns.diffGbp" class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 text-right">
+                                -
+                            </td>
+                            <td v-if="targetValue > 0 && visibleColumns.adjustedTargetPct" class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 text-right">
+                                {{ (100 - (targetCashPercentage || 0)).toFixed(2) }}%
+                            </td>
+                            <td v-if="targetValue > 0 && visibleColumns.adjustedDiffPercent" class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 text-right">
+                                -
+                            </td>
+                            <td v-if="targetValue > 0 && visibleColumns.adjustedDiffGbp" class="px-6 py-4 whitespace-nowrap text-sm text-gray-700 text-right">
+                                -
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                -
+                            </td>
+                            <td class="sticky right-0 px-6 py-4 whitespace-nowrap text-sm text-gray-600 bg-gray-50 shadow-[-2px_0_4px_rgba(0,0,0,0.05)]">
+                                -
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+        <!-- Empty State -->
+        <div v-if="portfolio.holdings.length === 0" class="bg-white rounded-lg shadow p-12 text-center">
+            <svg class="mx-auto h-16 w-16 text-gray-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <h3 class="text-lg font-medium text-gray-900 mb-2">No data yet</h3>
+            <p class="text-gray-600">Upload your CSV files or add manual cash entries to get started</p>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                // Load from localStorage if available
+                const saved = this.loadFromStorage();
+
+                return {
+                    // File upload state
+                    t212File: saved.t212File || null,
+                    t212RowCount: saved.t212RowCount || 0,
+                    t212Error: null,
+                    t212Holdings: saved.t212Holdings || [],
+
+                    ibkrFile: saved.ibkrFile || null,
+                    ibkrRowCount: saved.ibkrRowCount || 0,
+                    ibkrError: null,
+                    ibkrHoldings: saved.ibkrHoldings || [],
+
+                    // Manual cash entries
+                    manualCashEntries: saved.manualCashEntries || [],
+
+                    // Target value for percentage calculation
+                    targetValue: saved.targetValue || 0,
+
+                    // Target percentages for each stock
+                    targetPercentages: saved.targetPercentages || {},
+
+                    // Target cash percentage
+                    targetCashPercentage: saved.targetCashPercentage || 0,
+
+                    // Realised profits (manually entered)
+                    realisedProfits: saved.realisedProfits || {
+                        t212: 0,
+                        ibkr: 0
+                    },
+
+                    // Column visibility
+                    visibleColumns: saved.visibleColumns || {
+                        avgPrice: true,
+                        invested: true,
+                        pl: true,
+                        plPercent: true,
+                        percentInvested: true,
+                        targetPercent: true,
+                        diffPercent: true,
+                        diffGbp: true,
+                        adjustedTargetPct: true,
+                        adjustedDiffPercent: true,
+                        adjustedDiffGbp: true
+                    },
+                    showColumnSelector: false,
+
+                    // Sorting
+                    sortField: 'valueGBP',
+                    sortAsc: false
+                };
+            },
+            watch: {
+                t212Holdings: {
+                    handler() {
+                        this.saveToStorage();
+                    },
+                    deep: true
+                },
+                ibkrHoldings: {
+                    handler() {
+                        this.saveToStorage();
+                    },
+                    deep: true
+                },
+                manualCashEntries: {
+                    handler() {
+                        this.saveToStorage();
+                    },
+                    deep: true
+                },
+                targetValue() {
+                    this.saveToStorage();
+                },
+                targetPercentages: {
+                    handler() {
+                        this.saveToStorage();
+                    },
+                    deep: true
+                },
+                targetCashPercentage() {
+                    this.saveToStorage();
+                },
+                visibleColumns: {
+                    handler() {
+                        this.saveToStorage();
+                    },
+                    deep: true
+                },
+                realisedProfits: {
+                    handler() {
+                        this.saveToStorage();
+                    },
+                    deep: true
+                }
+            },
+            computed: {
+                portfolio() {
+                    const allHoldings = [
+                        ...this.t212Holdings,
+                        ...this.ibkrHoldings,
+                        ...this.getManualCashHoldings()
+                    ];
+
+                    // Group holdings by symbol
+                    const grouped = this.groupHoldings(allHoldings);
+
+                    const totalNetWorth = grouped.reduce((sum, h) => sum + h.valueGBP, 0);
+                    const cashTotal = grouped.filter(h => h.type === 'cash').reduce((sum, h) => sum + h.valueGBP, 0);
+                    const stocksTotal = grouped.filter(h => h.type !== 'cash').reduce((sum, h) => sum + h.valueGBP, 0);
+
+                    // VUSA breakdown
+                    const vusaTotal = grouped.filter(h => h.symbol === 'VUSA').reduce((sum, h) => sum + h.valueGBP, 0);
+                    const otherStocksTotal = grouped.filter(h => h.type !== 'cash' && h.symbol !== 'VUSA').reduce((sum, h) => sum + h.valueGBP, 0);
+
+                    // Calculate broker-specific totals
+                    const t212Total = this.t212Holdings.reduce((sum, h) => sum + h.valueGBP, 0);
+                    const t212Cash = this.t212Holdings.filter(h => h.type === 'cash').reduce((sum, h) => sum + h.valueGBP, 0);
+                    const t212Stocks = this.t212Holdings.filter(h => h.type !== 'cash').reduce((sum, h) => sum + h.valueGBP, 0);
+                    const t212Invested = this.t212Holdings.filter(h => h.type !== 'cash').reduce((sum, h) => sum + (h.costBasisGBP || 0), 0);
+                    const t212PL = this.t212Holdings.filter(h => h.type !== 'cash').reduce((sum, h) => sum + (h.unrealizedPL || 0), 0);
+
+                    const ibkrTotal = this.ibkrHoldings.reduce((sum, h) => sum + h.valueGBP, 0);
+                    const ibkrCash = this.ibkrHoldings.filter(h => h.type === 'cash').reduce((sum, h) => sum + h.valueGBP, 0);
+                    const ibkrStocks = this.ibkrHoldings.filter(h => h.type !== 'cash').reduce((sum, h) => sum + h.valueGBP, 0);
+                    const ibkrInvested = this.ibkrHoldings.filter(h => h.type !== 'cash').reduce((sum, h) => sum + (h.costBasisGBP || 0), 0);
+                    const ibkrPL = this.ibkrHoldings.filter(h => h.type !== 'cash').reduce((sum, h) => sum + (h.unrealizedPL || 0), 0);
+
+                    const manualTotal = this.getManualCashHoldings().reduce((sum, h) => sum + h.valueGBP, 0);
+
+                    // Calculate realised P/L from holdings (stored in cash entries)
+                    const t212RealisedPL = this.t212Holdings.find(h => h.type === 'cash')?.realisedPL || 0;
+                    const ibkrRealisedPL = this.ibkrHoldings.find(h => h.type === 'cash')?.realisedPL || 0;
+
+                    // Calculate total P/L (unrealised + realised)
+                    const totalUnrealisedPL = t212PL + ibkrPL;
+                    const totalRealisedPL = t212RealisedPL + ibkrRealisedPL;
+                    const totalPL = totalUnrealisedPL + totalRealisedPL;
+                    const totalInvested = t212Invested + ibkrInvested;
+
+                    const holdings = grouped.map(h => ({
+                        ...h,
+                        percentageOfPortfolio: totalNetWorth > 0 ? (h.valueGBP / totalNetWorth) * 100 : 0
+                    }));
+
+                    return {
+                        totalNetWorth,
+                        cashTotal,
+                        cashPercentage: totalNetWorth > 0 ? (cashTotal / totalNetWorth) * 100 : 0,
+                        stocksTotal,
+                        stocksPercentage: totalNetWorth > 0 ? (stocksTotal / totalNetWorth) * 100 : 0,
+                        vusaTotal,
+                        vusaPercentage: totalNetWorth > 0 ? (vusaTotal / totalNetWorth) * 100 : 0,
+                        otherStocksTotal,
+                        otherStocksPercentage: totalNetWorth > 0 ? (otherStocksTotal / totalNetWorth) * 100 : 0,
+                        t212Total,
+                        t212Cash,
+                        t212Stocks,
+                        t212Invested,
+                        t212PL,
+                        t212PLPercent: t212Invested > 0 ? (t212PL / t212Invested) * 100 : 0,
+                        t212RealisedPL,
+                        t212CashPercentage: t212Total > 0 ? (t212Cash / t212Total) * 100 : 0,
+                        t212StocksPercentage: t212Total > 0 ? (t212Stocks / t212Total) * 100 : 0,
+                        ibkrTotal,
+                        ibkrCash,
+                        ibkrStocks,
+                        ibkrInvested,
+                        ibkrPL,
+                        ibkrPLPercent: ibkrInvested > 0 ? (ibkrPL / ibkrInvested) * 100 : 0,
+                        ibkrRealisedPL,
+                        ibkrCashPercentage: ibkrTotal > 0 ? (ibkrCash / ibkrTotal) * 100 : 0,
+                        ibkrStocksPercentage: ibkrTotal > 0 ? (ibkrStocks / ibkrTotal) * 100 : 0,
+                        manualTotal,
+                        holdings,
+                        // Total P/L values
+                        totalUnrealisedPL,
+                        totalRealisedPL,
+                        totalPL,
+                        totalInvested,
+                        totalPLPercent: totalInvested > 0 ? (totalPL / totalInvested) * 100 : 0
+                    };
+                },
+                sortedHoldings() {
+                    // Filter out cash and VUSA
+                    const holdings = [...this.portfolio.holdings].filter(h => h.type !== 'cash' && h.symbol !== 'VUSA');
+
+                    // Add computed percentage fields if target value is set
+                    if (this.targetValue > 0) {
+                        // Calculate sum of all original target percentages
+                        const totalOriginalTargetPct = Object.values(this.targetPercentages)
+                            .reduce((sum, val) => sum + (parseFloat(val) || 0), 0);
+
+                        // Calculate available percentage for stocks (100% - cash%)
+                        const availableForStocks = 100 - (this.targetCashPercentage || 0);
+
+                        holdings.forEach(h => {
+                            h.percentInvested = h.costBasisGBP ? (h.costBasisGBP / this.targetValue) * 100 : 0;
+                            h.percentCurrent = (h.valueGBP / this.targetValue) * 100;
+                            const targetPct = parseFloat(this.targetPercentages[h.symbol]) || 0;
+                            h.percentDiff = h.percentInvested - targetPct;
+
+                            // Calculate GBP difference (how much more/less to invest to reach target)
+                            const targetAmount = (this.targetValue * targetPct) / 100;
+                            h.gbpDiff = targetAmount - (h.costBasisGBP || 0);
+
+                            // Adjusted target calculations (accounting for cash allocation)
+                            if (totalOriginalTargetPct > 0) {
+                                // Scale the target percentage proportionally
+                                h.adjustedTargetPct = (targetPct / totalOriginalTargetPct) * availableForStocks;
+                            } else {
+                                h.adjustedTargetPct = 0;
+                            }
+
+                            // Adjusted diff % (difference from adjusted target)
+                            h.adjustedPercentDiff = h.percentInvested - h.adjustedTargetPct;
+
+                            // Adjusted diff £ (GBP to reach adjusted target)
+                            const adjustedTargetAmount = (this.targetValue * h.adjustedTargetPct) / 100;
+                            h.adjustedGbpDiff = adjustedTargetAmount - (h.costBasisGBP || 0);
+                        });
+                    }
+
+                    return holdings.sort((a, b) => {
+                        let aVal = a[this.sortField];
+                        let bVal = b[this.sortField];
+
+                        if (typeof aVal === 'string') {
+                            aVal = aVal.toLowerCase();
+                            bVal = bVal.toLowerCase();
+                        }
+
+                        if (this.sortAsc) {
+                            return aVal > bVal ? 1 : -1;
+                        } else {
+                            return aVal < bVal ? 1 : -1;
+                        }
+                    });
+                },
+                hasData() {
+                    return this.t212Holdings.length > 0 ||
+                           this.ibkrHoldings.length > 0 ||
+                           this.manualCashEntries.some(e => e.label && e.valueGBP > 0);
+                }
+            },
+            methods: {
+                // File upload handlers
+                handleT212Upload(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+
+                    this.t212File = file;
+                    this.t212Error = null;
+
+                    Papa.parse(file, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            try {
+                                this.t212Holdings = this.parseT212CSV(results.data);
+                                this.t212RowCount = this.t212Holdings.length;
+                            } catch (error) {
+                                this.t212Error = error.message;
+                                this.t212Holdings = [];
+                                this.t212RowCount = 0;
+                            }
+                        },
+                        error: (error) => {
+                            this.t212Error = 'Failed to parse CSV: ' + error.message;
+                        }
+                    });
+                },
+
+                handleIBKRUpload(event) {
+                    const file = event.target.files[0];
+                    if (!file) return;
+
+                    this.ibkrFile = file;
+                    this.ibkrError = null;
+
+                    // First, parse with headers to check if it's an Activity Statement
+                    Papa.parse(file, {
+                        header: true,
+                        skipEmptyLines: true,
+                        preview: 10,
+                        complete: (previewResults) => {
+                            const isActivityStatement = previewResults.data.some(row => {
+                                const firstCol = Object.keys(row)[0];
+                                const value = String(row[firstCol] || '');
+                                return value.includes('Statement') || value.includes('Open Positions');
+                            });
+
+                            // If Activity Statement, re-parse without headers
+                            if (isActivityStatement) {
+                                Papa.parse(file, {
+                                    header: false,
+                                    skipEmptyLines: true,
+                                    complete: (results) => {
+                                        try {
+                                            console.log('IBKR CSV parsed (no headers), rows:', results.data.length);
+                                            console.log('First row:', results.data[0]);
+
+                                            this.ibkrHoldings = this.parseIBKRActivityStatementRaw(results.data);
+                                            this.ibkrRowCount = this.ibkrHoldings.length;
+
+                                            console.log('IBKR holdings parsed:', this.ibkrRowCount);
+                                            console.log('Holdings:', this.ibkrHoldings);
+                                        } catch (error) {
+                                            console.error('IBKR parse error:', error);
+                                            this.ibkrError = error.message;
+                                            this.ibkrHoldings = [];
+                                            this.ibkrRowCount = 0;
+                                        }
+                                    },
+                                    error: (error) => {
+                                        console.error('Papa parse error:', error);
+                                        this.ibkrError = 'Failed to parse CSV: ' + error.message;
+                                    }
+                                });
+                            } else {
+                                // Use regular parser with headers
+                                Papa.parse(file, {
+                                    header: true,
+                                    skipEmptyLines: true,
+                                    complete: (results) => {
+                                        try {
+                                            this.ibkrHoldings = this.parseIBKRCSV(results.data);
+                                            this.ibkrRowCount = this.ibkrHoldings.length;
+                                        } catch (error) {
+                                            this.ibkrError = error.message;
+                                            this.ibkrHoldings = [];
+                                            this.ibkrRowCount = 0;
+                                        }
+                                    },
+                                    error: (error) => {
+                                        this.ibkrError = 'Failed to parse CSV: ' + error.message;
+                                    }
+                                });
+                            }
+                        }
+                    });
+                },
+
+                clearT212() {
+                    this.t212File = null;
+                    this.t212Holdings = [];
+                    this.t212RowCount = 0;
+                    this.t212Error = null;
+                    this.$refs.t212Input.value = '';
+                },
+
+                clearIBKR() {
+                    this.ibkrFile = null;
+                    this.ibkrHoldings = [];
+                    this.ibkrRowCount = 0;
+                    this.ibkrError = null;
+                    this.$refs.ibkrInput.value = '';
+                },
+
+                // CSV Parsers
+                parseT212CSV(data) {
+                    if (data.length === 0) {
+                        throw new Error('CSV file is empty');
+                    }
+
+                    const headers = Object.keys(data[0]);
+
+                    // Check if this is transaction history format (has "Action" column)
+                    const actionCol = this.findColumn(headers, ['action']);
+
+                    if (actionCol) {
+                        // Parse transaction history format
+                        return this.parseT212TransactionHistory(data, headers);
+                    } else {
+                        // Parse portfolio statement format (original parser)
+                        return this.parseT212PortfolioStatement(data, headers);
+                    }
+                },
+
+                parseT212PortfolioStatement(data, headers) {
+                    const holdings = [];
+
+                    // Fuzzy match column names
+                    const tickerCol = this.findColumn(headers, ['ticker', 'symbol']);
+                    const nameCol = this.findColumn(headers, ['name', 'description']);
+                    const quantityCol = this.findColumn(headers, ['quantity', 'no. of shares']);
+                    const valueCol = this.findColumn(headers, ['value', 'total']);
+
+                    if (!tickerCol || !valueCol) {
+                        throw new Error(`Expected columns not found. Looking for: Ticker/Symbol and Value. Found: ${headers.join(', ')}`);
+                    }
+
+                    for (const row of data) {
+                        const symbol = row[tickerCol]?.trim();
+                        const valueStr = row[valueCol]?.toString().replace(/,/g, '');
+                        const value = parseFloat(valueStr);
+
+                        if (!symbol || isNaN(value) || value === 0) continue;
+
+                        const name = row[nameCol] || symbol;
+                        const quantity = row[quantityCol] ? parseFloat(row[quantityCol].toString().replace(/,/g, '')) : 0;
+
+                        // Determine type
+                        let type = 'stock';
+                        if (symbol === 'GBP' || symbol.toLowerCase().includes('cash')) {
+                            type = 'cash';
+                        } else if (name.toLowerCase().includes('etf') || symbol.toLowerCase().includes('etf')) {
+                            type = 'etf';
+                        }
+
+                        holdings.push({
+                            symbol,
+                            name,
+                            quantity,
+                            valueGBP: value,
+                            type,
+                            source: 't212'
+                        });
+                    }
+
+                    return holdings;
+                },
+
+                parseT212TransactionHistory(data, headers) {
+                    const positions = {}; // Track positions by ticker
+                    let cashBalance = 0; // Track actual cash movements
+                    let totalRealisedPL = 0; // Track realised profits from closed positions
+
+                    // Find relevant columns
+                    const actionCol = this.findColumn(headers, ['action']);
+                    const tickerCol = this.findColumn(headers, ['ticker', 'symbol']);
+                    const nameCol = this.findColumn(headers, ['name']);
+                    const sharesCol = this.findColumn(headers, ['no. of shares', 'quantity']);
+                    const priceCol = this.findColumn(headers, ['price / share', 'price']);
+                    const currencyPriceCol = this.findColumn(headers, ['currency (price / share)']);
+                    const exchangeRateCol = this.findColumn(headers, ['exchange rate']);
+                    const totalCol = this.findColumn(headers, ['total']);
+                    const currencyTotalCol = this.findColumn(headers, ['currency (total)']);
+                    const feeCol = this.findColumn(headers, ['currency conversion fee']);
+
+                    for (const row of data) {
+                        const action = row[actionCol]?.trim();
+                        const ticker = row[tickerCol]?.trim();
+                        const name = row[nameCol]?.trim();
+                        const shares = parseFloat(row[sharesCol]?.toString().replace(/,/g, '')) || 0;
+                        const price = parseFloat(row[priceCol]?.toString().replace(/,/g, '')) || 0;
+                        const priceCurrency = row[currencyPriceCol]?.trim() || 'GBP';
+                        const exchangeRate = parseFloat(row[exchangeRateCol]?.toString().replace(/,/g, '')) || 1;
+                        const total = Math.abs(parseFloat(row[totalCol]?.toString().replace(/,/g, '')) || 0);
+                        const totalCurrency = row[currencyTotalCol]?.trim() || 'GBP';
+                        const fee = parseFloat(row[feeCol]?.toString().replace(/,/g, '')) || 0;
+
+                        const actionLower = action?.toLowerCase() || '';
+
+                        // Track cash movements
+                        if (actionLower === 'deposit' && totalCurrency === 'GBP') {
+                            cashBalance += total;
+                            continue;
+                        } else if (actionLower === 'withdrawal' && totalCurrency === 'GBP') {
+                            cashBalance -= total;
+                            continue;
+                        }
+
+                        if (!ticker || !shares) continue;
+
+                        // Track cash for buy/sell transactions (NOT transfers - they don't affect cash)
+                        if (actionLower.includes('buy') && !actionLower.includes('transfer')) {
+                            // Buying reduces cash (total + fees)
+                            if (totalCurrency === 'GBP') {
+                                cashBalance -= (total + fee);
+                            }
+                        } else if (actionLower.includes('sell') && !actionLower.includes('transfer')) {
+                            // Selling increases cash (total - fees)
+                            if (totalCurrency === 'GBP') {
+                                cashBalance += (total - fee);
+                            }
+                        }
+
+                        // Initialize position for this ticker
+                        if (!positions[ticker]) {
+                            positions[ticker] = {
+                                ticker,
+                                name,
+                                totalShares: 0,
+                                totalCostGBP: 0,       // Total amount invested
+                                totalSharesBought: 0,   // Total shares ever bought
+                                lastPrice: 0,
+                                lastPriceCurrency: 'GBP',
+                                lastExchangeRate: 1
+                            };
+                        }
+
+                        // Update position based on action (actionLower already declared above)
+                        if (actionLower.includes('buy') || actionLower.includes('transfer in')) {
+                            // Buy or transfer in = add shares
+                            positions[ticker].totalShares += shares;
+                            positions[ticker].totalSharesBought += shares;
+
+                            // Add cost (total + fees, in GBP)
+                            if (totalCurrency === 'GBP') {
+                                positions[ticker].totalCostGBP += (total + fee);
+                            }
+
+                            positions[ticker].lastPrice = price;
+                            positions[ticker].lastPriceCurrency = priceCurrency;
+                            positions[ticker].lastExchangeRate = exchangeRate;
+                            positions[ticker].name = name; // Update name
+                        } else if (actionLower.includes('sell') || actionLower.includes('transfer out')) {
+                            // Sell or transfer out = remove shares
+                            // Use average cost method to reduce cost basis proportionally
+                            const avgCost = positions[ticker].totalShares > 0
+                                ? positions[ticker].totalCostGBP / positions[ticker].totalShares
+                                : 0;
+                            const costToRemove = avgCost * shares;
+
+                            // Calculate realised profit for sells (not transfers)
+                            if (actionLower.includes('sell') && totalCurrency === 'GBP') {
+                                const saleProceeds = total - fee; // Net proceeds after fees
+                                const realisedPL = saleProceeds - costToRemove;
+                                totalRealisedPL += realisedPL;
+                            }
+
+                            positions[ticker].totalShares -= shares;
+                            positions[ticker].totalCostGBP -= costToRemove;
+
+                            // Still update last price to most recent
+                            positions[ticker].lastPrice = price;
+                            positions[ticker].lastPriceCurrency = priceCurrency;
+                            positions[ticker].lastExchangeRate = exchangeRate;
+                        }
+                    }
+
+                    // Convert positions to holdings array
+                    const holdings = [];
+
+                    // Debug: Log position details
+                    console.log('T212 Positions Summary:');
+                    for (const ticker in positions) {
+                        const pos = positions[ticker];
+                        if (pos.totalShares > 0.0001) {
+                            console.log(`${ticker}: ${pos.totalShares.toFixed(2)} shares, Cost: £${pos.totalCostGBP.toFixed(2)}`);
+                        }
+                    }
+
+                    // Add stock/ETF positions
+                    for (const ticker in positions) {
+                        const pos = positions[ticker];
+
+                        // Skip if position is closed (no shares)
+                        if (pos.totalShares <= 0.0001) continue;
+
+                        // Calculate value in GBP
+                        let valueGBP;
+                        if (pos.lastPriceCurrency === 'GBP') {
+                            // Already in GBP
+                            valueGBP = pos.totalShares * pos.lastPrice;
+                        } else {
+                            // Convert from foreign currency (USD, CAD, EUR, GBX, etc.)
+                            // Exchange rate is foreign currency per GBP (e.g., 1.84 CAD/GBP)
+                            valueGBP = (pos.totalShares * pos.lastPrice) / pos.lastExchangeRate;
+                        }
+
+                        // Determine type
+                        let type = 'stock';
+                        if (pos.name && (pos.name.toLowerCase().includes('etf') || pos.name.toLowerCase().includes('vanguard'))) {
+                            type = 'etf';
+                        }
+
+                        // Calculate P/L metrics
+                        const costBasisGBP = pos.totalCostGBP;
+                        const avgPriceGBP = costBasisGBP / pos.totalShares;
+                        const unrealizedPL = valueGBP - costBasisGBP;
+                        const unrealizedPLPercent = costBasisGBP > 0 ? (unrealizedPL / costBasisGBP) * 100 : 0;
+
+                        holdings.push({
+                            symbol: ticker,
+                            name: pos.name || ticker,
+                            quantity: pos.totalShares,
+                            valueGBP: valueGBP,
+                            costBasisGBP: costBasisGBP,
+                            avgPriceGBP: avgPriceGBP,
+                            unrealizedPL: unrealizedPL,
+                            unrealizedPLPercent: unrealizedPLPercent,
+                            type,
+                            source: 't212'
+                        });
+                    }
+
+                    // Add cash balance (show even if small/negative for debugging)
+                    // Note: Negative cash means you've spent more than deposited (due to losses)
+                    holdings.push({
+                        symbol: 'GBP',
+                        name: cashBalance >= 0 ? 'Cash' : 'Cash (deficit)',
+                        quantity: 1,
+                        valueGBP: cashBalance,
+                        type: 'cash',
+                        source: 't212',
+                        realisedPL: totalRealisedPL // Include realised P/L from all closed positions
+                    });
+
+                    console.log('T212 Realised P/L:', totalRealisedPL.toFixed(2));
+                    return holdings;
+                },
+
+                parseIBKRCSV(data) {
+                    if (data.length === 0) {
+                        throw new Error('CSV file is empty');
+                    }
+
+                    const headers = Object.keys(data[0]);
+
+                    // Check if this is an Activity Statement format
+                    // Activity Statements have section names in the first column
+                    // Note: First column might have BOM character (﻿Statement)
+                    const firstRow = data[0];
+                    const firstCol = headers[0];
+                    const firstValue = String(firstRow[firstCol] || '').trim();
+
+                    // Check first few rows for section names (handle BOM and various formats)
+                    let isActivityStatement = false;
+                    for (let i = 0; i < Math.min(10, data.length); i++) {
+                        const rowValue = String(data[i][firstCol] || '');
+                        if (rowValue.includes('Statement') ||
+                            rowValue.includes('Account Information') ||
+                            rowValue.includes('Open Positions') ||
+                            rowValue.includes('Cash Report') ||
+                            rowValue.includes('Net Asset Value')) {
+                            isActivityStatement = true;
+                            break;
+                        }
+                    }
+
+                    if (isActivityStatement) {
+                        // This is an Activity Statement - use specialized parser
+                        return this.parseIBKRActivityStatement(data);
+                    }
+
+                    // Otherwise, use the original simple parser
+                    const holdings = [];
+
+                    // Fuzzy match column names
+                    const symbolCol = this.findColumn(headers, ['symbol', 'ticker']);
+                    const descCol = this.findColumn(headers, ['description', 'name']);
+                    const quantityCol = this.findColumn(headers, ['quantity', 'position']);
+                    const valueCol = this.findColumn(headers, ['value', 'position value', 'market value']);
+
+                    if (!symbolCol || !valueCol) {
+                        throw new Error(`Expected columns not found. Looking for: Symbol and Value. Found: ${headers.join(', ')}`);
+                    }
+
+                    for (const row of data) {
+                        const symbol = row[symbolCol]?.trim();
+                        const valueStr = row[valueCol]?.toString().replace(/,/g, '');
+                        const value = parseFloat(valueStr);
+
+                        if (!symbol || isNaN(value) || value === 0) continue;
+
+                        // Skip summary rows
+                        if (symbol.includes('Total') || symbol.includes('TOTAL')) continue;
+
+                        const name = row[descCol] || symbol;
+                        const quantity = row[quantityCol] ? parseFloat(row[quantityCol].toString().replace(/,/g, '')) : 0;
+
+                        // Determine type
+                        let type = 'stock';
+                        if (symbol === 'GBP' || symbol === 'USD' || symbol.includes('BASE_SUMMARY')) {
+                            type = 'cash';
+                        } else if (name.toLowerCase().includes('etf') || symbol.toLowerCase().includes('etf')) {
+                            type = 'etf';
+                        }
+
+                        holdings.push({
+                            symbol: symbol === 'BASE_SUMMARY' ? 'GBP' : symbol,
+                            name: type === 'cash' ? 'Cash' : name,
+                            quantity,
+                            valueGBP: Math.abs(value), // Use absolute value
+                            type,
+                            source: 'ibkr'
+                        });
+                    }
+
+                    return holdings;
+                },
+
+                parseIBKRActivityStatementRaw(data) {
+                    // Data is an array of arrays (no headers)
+                    const holdings = [];
+                    const positions = [];
+                    const currencyTotals = {};
+                    const performanceData = {}; // Store P/L data by symbol
+                    let lastCurrency = null;
+                    let totalRealisedPL = 0; // Track realised P/L from performance summary
+
+                    // Step 1: Parse Open Positions section
+                    for (const row of data) {
+                        const section = row[0];
+                        const rowType = row[1];
+
+                        if (section === 'Open Positions') {
+                            if (rowType === 'Data') {
+                                // Position row: [section, type, discriminator, asset, currency, symbol, qty, mult, cost, basis, close, value, ...]
+                                const currency = row[4];
+                                const symbol = row[5];
+                                const quantity = parseFloat(String(row[6] || '').replace(/,/g, '')) || 0;
+                                const value = parseFloat(String(row[11] || '').replace(/,/g, '')) || 0;
+
+                                if (symbol && quantity > 0.0001 && value > 0) {
+                                    positions.push({ symbol, quantity, value, currency });
+                                }
+                            } else if (rowType === 'Total') {
+                                // Subtotal row - value is in column 11
+                                const currency = row[4];
+                                const totalValue = parseFloat(String(row[11] || '').replace(/,/g, '')) || 0;
+
+                                if (currency && totalValue > 0) {
+                                    if (currency === 'GBP') {
+                                        // This is a GBP-converted total - assign to the last non-GBP currency
+                                        if (lastCurrency && lastCurrency !== 'GBP' && currencyTotals[lastCurrency]) {
+                                            // Only assign if we haven't already assigned a GBP conversion
+                                            if (!currencyTotals[lastCurrency].gbp) {
+                                                currencyTotals[lastCurrency].gbp = totalValue;
+                                                lastCurrency = null; // Reset to avoid overwriting
+                                            }
+                                        }
+                                    } else {
+                                        // This is a native currency total
+                                        if (!currencyTotals[currency]) {
+                                            currencyTotals[currency] = {};
+                                        }
+                                        currencyTotals[currency].native = totalValue;
+                                        lastCurrency = currency;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Step 1.5: Parse Realized & Unrealized Performance Summary for P/L
+                    // Column structure: Section, Type, AssetClass, Symbol, ..., RealisedTotal (varies), UnrealisedTotal
+                    for (const row of data) {
+                        const section = row[0];
+                        const rowType = row[1];
+                        const assetClass = row[2];
+
+                        if (section === 'Realized & Unrealized Performance Summary' &&
+                            rowType === 'Data' &&
+                            assetClass === 'Stocks') {
+                            const symbol = row[3];
+                            // Realised P/L is typically in column 10 (Realized Total)
+                            const realisedTotal = parseFloat(String(row[10] || '').replace(/,/g, '')) || 0;
+                            const unrealizedTotal = parseFloat(String(row[14] || '').replace(/,/g, '')) || 0;
+
+                            if (symbol) {
+                                performanceData[symbol] = unrealizedTotal;
+                                totalRealisedPL += realisedTotal;
+                            }
+                        }
+                    }
+                    console.log('IBKR Realised P/L:', totalRealisedPL.toFixed(2));
+
+                    // Step 2: Convert positions to GBP
+                    for (const pos of positions) {
+                        let valueGBP;
+
+                        if (pos.currency === 'GBP') {
+                            valueGBP = pos.value;
+                        } else if (currencyTotals[pos.currency]?.native > 0 && currencyTotals[pos.currency]?.gbp > 0) {
+                            const conversionFactor = currencyTotals[pos.currency].gbp / currencyTotals[pos.currency].native;
+                            valueGBP = pos.value * conversionFactor;
+                        } else {
+                            // Fallback: use value as-is
+                            valueGBP = pos.value;
+                        }
+
+                        let type = 'stock';
+                        if (pos.symbol.toLowerCase().includes('etf')) {
+                            type = 'etf';
+                        }
+
+                        // Get P/L data if available (already in GBP from IBKR)
+                        const unrealizedPL = performanceData[pos.symbol] || 0;
+                        const costBasisGBP = valueGBP - unrealizedPL;
+                        const avgPriceGBP = costBasisGBP / pos.quantity;
+                        const unrealizedPLPercent = costBasisGBP > 0 ? (unrealizedPL / costBasisGBP) * 100 : 0;
+
+                        holdings.push({
+                            symbol: pos.symbol,
+                            name: pos.symbol,
+                            quantity: pos.quantity,
+                            valueGBP: valueGBP,
+                            costBasisGBP: costBasisGBP,
+                            avgPriceGBP: avgPriceGBP,
+                            unrealizedPL: unrealizedPL,
+                            unrealizedPLPercent: unrealizedPLPercent,
+                            type,
+                            source: 'ibkr'
+                        });
+                    }
+
+                    // Step 3: Parse Cash Report
+                    let cashBalance = 0;
+                    for (const row of data) {
+                        const section = row[0];
+                        const rowType = row[1];
+                        const field = row[2];
+
+                        if (section === 'Cash Report' && rowType === 'Data') {
+                            if (field && field.includes('Ending Cash')) {
+                                const currency = row[3];
+                                const amount = parseFloat(String(row[4] || '').replace(/,/g, '')) || 0;
+
+                                if (currency === 'Base Currency Summary' || currency === 'GBP') {
+                                    cashBalance = amount;
+                                }
+                            }
+                        }
+                    }
+
+                    // Always add cash entry (even if 0) to store realised P/L
+                    holdings.push({
+                        symbol: 'GBP',
+                        name: 'Cash',
+                        quantity: 1,
+                        valueGBP: cashBalance > 1 ? cashBalance : 0,
+                        type: 'cash',
+                        source: 'ibkr',
+                        realisedPL: totalRealisedPL // Include realised P/L from performance summary
+                    });
+
+                    return holdings;
+                },
+
+                parseIBKRActivityStatement(data) {
+                    const holdings = [];
+                    const headers = Object.keys(data[0]);
+
+                    // Step 1: Parse Open Positions section
+                    const positions = [];
+                    const currencyTotals = {}; // Track totals by currency
+
+                    for (const row of data) {
+                        const section = row[headers[0]];
+                        const rowType = row[headers[1]];
+
+                        if (section === 'Open Positions') {
+                            if (rowType === 'Data') {
+                                // Individual position row
+                                const currency = row[headers[4]];
+                                const symbol = row[headers[5]];
+                                const quantity = parseFloat(row[headers[6]]?.toString().replace(/,/g, '')) || 0;
+                                const value = parseFloat(row[headers[11]]?.toString().replace(/,/g, '')) || 0;
+
+                                if (symbol && quantity > 0.0001 && value > 0) {
+                                    positions.push({
+                                        symbol,
+                                        quantity,
+                                        value,
+                                        currency
+                                    });
+                                }
+                            } else if (rowType === 'Total') {
+                                // Currency subtotal row
+                                const currency = row[headers[4]];
+                                const totalValue = parseFloat(row[headers[11]]?.toString().replace(/,/g, '')) || 0;
+
+                                if (currency && totalValue) {
+                                    if (!currencyTotals[currency]) {
+                                        currencyTotals[currency] = { native: 0, gbp: 0 };
+                                    }
+
+                                    // Check if this is the GBP-converted total (appears after native currency total)
+                                    if (currency === 'GBP' && !currencyTotals.GBP) {
+                                        currencyTotals.GBP = { native: totalValue, gbp: totalValue };
+                                    } else if (currency === 'GBP') {
+                                        // This is a conversion total for another currency
+                                        // We need to match it to the previous currency
+                                        // For now, skip - we'll use a different approach
+                                    } else {
+                                        currencyTotals[currency].native = totalValue;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Step 2: Calculate currency conversion factors
+                    // Look for "Open Positions,Total,,Stocks,GBP" rows that follow each currency total
+                    // These represent the GBP-converted values
+                    let lastCurrency = null;
+                    for (const row of data) {
+                        const section = row[headers[0]];
+                        const rowType = row[headers[1]];
+
+                        if (section === 'Open Positions' && rowType === 'Total') {
+                            const currency = row[headers[4]];
+                            const totalValue = parseFloat(row[headers[9]]?.toString().replace(/,/g, '')) || 0;
+
+                            if (currency === 'GBP' && lastCurrency && lastCurrency !== 'GBP' && totalValue > 0) {
+                                // This is the GBP conversion of the last currency
+                                if (currencyTotals[lastCurrency]) {
+                                    currencyTotals[lastCurrency].gbp = totalValue;
+                                }
+                            }
+
+                            if (currency !== 'GBP') {
+                                lastCurrency = currency;
+                            }
+                        }
+                    }
+
+                    // Step 3: Convert positions to holdings with GBP values
+                    for (const pos of positions) {
+                        let valueGBP;
+
+                        if (pos.currency === 'GBP') {
+                            valueGBP = pos.value;
+                        } else if (currencyTotals[pos.currency]?.native > 0 && currencyTotals[pos.currency]?.gbp > 0) {
+                            // Use conversion factor from totals
+                            const conversionFactor = currencyTotals[pos.currency].gbp / currencyTotals[pos.currency].native;
+                            valueGBP = pos.value * conversionFactor;
+                        } else {
+                            // Fallback: assume 1:1 (not ideal, but better than nothing)
+                            valueGBP = pos.value;
+                        }
+
+                        // Determine type
+                        let type = 'stock';
+                        if (pos.symbol.toLowerCase().includes('etf')) {
+                            type = 'etf';
+                        }
+
+                        holdings.push({
+                            symbol: pos.symbol,
+                            name: pos.symbol,
+                            quantity: pos.quantity,
+                            valueGBP: valueGBP,
+                            type,
+                            source: 'ibkr'
+                        });
+                    }
+
+                    // Step 4: Parse Cash Report for cash balance
+                    let cashBalance = 0;
+                    for (const row of data) {
+                        const section = row[headers[0]];
+                        const rowType = row[headers[1]];
+                        const field = row[headers[2]];
+
+                        if (section === 'Cash Report' && rowType === 'Data') {
+                            if (field && field.includes('Ending Cash')) {
+                                const currency = row[headers[3]];
+                                const amount = parseFloat(row[headers[4]]?.toString().replace(/,/g, '')) || 0;
+
+                                if (currency === 'Base Currency Summary' || currency === 'GBP') {
+                                    cashBalance = amount;
+                                }
+                            }
+                        }
+                    }
+
+                    // Add cash if positive
+                    if (cashBalance > 1) {
+                        holdings.push({
+                            symbol: 'GBP',
+                            name: 'Cash',
+                            quantity: 1,
+                            valueGBP: cashBalance,
+                            type: 'cash',
+                            source: 'ibkr'
+                        });
+                    }
+
+                    return holdings;
+                },
+
+                // Helper to find column with fuzzy matching
+                findColumn(headers, possibilities) {
+                    for (const header of headers) {
+                        const headerLower = header.toLowerCase();
+                        for (const possibility of possibilities) {
+                            if (headerLower.includes(possibility.toLowerCase())) {
+                                return header;
+                            }
+                        }
+                    }
+                    return null;
+                },
+
+                // Manual cash management
+                addManualCash() {
+                    this.manualCashEntries.push({ label: '', valueGBP: 0 });
+                },
+
+                removeManualCash(index) {
+                    this.manualCashEntries.splice(index, 1);
+                },
+
+                getManualCashHoldings() {
+                    return this.manualCashEntries
+                        .filter(entry => entry.label && entry.valueGBP > 0)
+                        .map(entry => ({
+                            symbol: 'CASH',
+                            name: entry.label,
+                            quantity: 1,
+                            valueGBP: entry.valueGBP,
+                            type: 'cash',
+                            source: 'manual'
+                        }));
+                },
+
+                // Group holdings by symbol
+                groupHoldings(holdings) {
+                    const groups = {};
+
+                    for (const holding of holdings) {
+                        const key = holding.symbol + '|' + holding.type;
+
+                        if (!groups[key]) {
+                            groups[key] = { ...holding, sources: [holding.source] };
+                        } else {
+                            groups[key].valueGBP += holding.valueGBP;
+                            groups[key].quantity += holding.quantity;
+
+                            // Aggregate cost basis and P/L
+                            if (holding.costBasisGBP !== undefined) {
+                                groups[key].costBasisGBP = (groups[key].costBasisGBP || 0) + holding.costBasisGBP;
+                                groups[key].unrealizedPL = (groups[key].unrealizedPL || 0) + holding.unrealizedPL;
+                            }
+
+                            if (!groups[key].sources.includes(holding.source)) {
+                                groups[key].sources.push(holding.source);
+                            }
+                        }
+                    }
+
+                    // Convert to array and set source labels
+                    return Object.values(groups).map(group => {
+                        const sources = group.sources.filter(s => s !== 'manual');
+                        let sourceLabel;
+
+                        if (sources.length > 1) {
+                            sourceLabel = sources.join(' + ');
+                        } else if (sources.length === 1) {
+                            sourceLabel = sources[0];
+                        } else {
+                            sourceLabel = 'manual';
+                        }
+
+                        delete group.sources;
+                        group.source = sourceLabel;
+
+                        // Recalculate average price and P/L % for grouped holdings
+                        if (group.costBasisGBP !== undefined && group.quantity > 0) {
+                            group.avgPriceGBP = group.costBasisGBP / group.quantity;
+                            group.unrealizedPLPercent = group.costBasisGBP > 0
+                                ? (group.unrealizedPL / group.costBasisGBP) * 100
+                                : 0;
+                        }
+
+                        return group;
+                    });
+                },
+
+                // Sorting
+                sortBy(field) {
+                    if (this.sortField === field) {
+                        this.sortAsc = !this.sortAsc;
+                    } else {
+                        this.sortField = field;
+                        this.sortAsc = field === 'symbol'; // Ascending for symbol, descending for numbers
+                    }
+                },
+
+                removeHolding(holding) {
+                    if (confirm(`Are you sure you want to remove ${holding.symbol} from ${holding.source}?`)) {
+                        // Remove from the appropriate source array based on holding.source
+                        if (holding.source === 't212') {
+                            this.t212Holdings = this.t212Holdings.filter(h => h.symbol !== holding.symbol);
+                        } else if (holding.source === 'ibkr') {
+                            this.ibkrHoldings = this.ibkrHoldings.filter(h => h.symbol !== holding.symbol);
+                        } else if (holding.source === 'manual') {
+                            // Remove from manual holdings
+                            this.manualHoldings = this.manualHoldings.filter(h => h.symbol !== holding.symbol);
+                        }
+                    }
+                },
+
+                // Formatting
+                formatNumber(num) {
+                    return num.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                },
+
+                // Asset allocation pie chart
+                getAssetAllocationGradient() {
+                    const cash = this.portfolio.cashPercentage;
+                    const vusa = this.portfolio.vusaPercentage;
+                    const other = this.portfolio.otherStocksPercentage;
+
+                    let currentAngle = 0;
+                    const stops = [];
+
+                    // Cash (green)
+                    if (cash > 0) {
+                        const angle = cash * 3.6;
+                        stops.push(`#10b981 ${currentAngle}deg ${currentAngle + angle}deg`);
+                        currentAngle += angle;
+                    }
+
+                    // VUSA (purple)
+                    if (vusa > 0) {
+                        const angle = vusa * 3.6;
+                        stops.push(`#8b5cf6 ${currentAngle}deg ${currentAngle + angle}deg`);
+                        currentAngle += angle;
+                    }
+
+                    // Other stocks (blue)
+                    if (other > 0) {
+                        const angle = other * 3.6;
+                        stops.push(`#3b82f6 ${currentAngle}deg ${currentAngle + angle}deg`);
+                        currentAngle += angle;
+                    }
+
+                    return `conic-gradient(${stops.join(', ')})`;
+                },
+
+                // LocalStorage management
+                saveToStorage() {
+                    try {
+                        const data = {
+                            t212Holdings: this.t212Holdings,
+                            t212RowCount: this.t212RowCount,
+                            t212File: this.t212File ? { name: this.t212File.name } : null,
+                            ibkrHoldings: this.ibkrHoldings,
+                            ibkrRowCount: this.ibkrRowCount,
+                            ibkrFile: this.ibkrFile ? { name: this.ibkrFile.name } : null,
+                            manualCashEntries: this.manualCashEntries,
+                            targetValue: this.targetValue,
+                            targetPercentages: this.targetPercentages,
+                            targetCashPercentage: this.targetCashPercentage,
+                            visibleColumns: this.visibleColumns,
+                            realisedProfits: this.realisedProfits,
+                            timestamp: Date.now()
+                        };
+                        localStorage.setItem('portfolioAggregator', JSON.stringify(data));
+                    } catch (error) {
+                        console.error('Failed to save to localStorage:', error);
+                    }
+                },
+
+                loadFromStorage() {
+                    try {
+                        const saved = localStorage.getItem('portfolioAggregator');
+                        if (saved) {
+                            return JSON.parse(saved);
+                        }
+                    } catch (error) {
+                        console.error('Failed to load from localStorage:', error);
+                    }
+                    return {};
+                },
+
+                clearAllData() {
+                    if (confirm('Are you sure you want to clear all data? This cannot be undone.')) {
+                        // Clear Vue data
+                        this.t212File = null;
+                        this.t212Holdings = [];
+                        this.t212RowCount = 0;
+                        this.t212Error = null;
+                        this.$refs.t212Input.value = '';
+
+                        this.ibkrFile = null;
+                        this.ibkrHoldings = [];
+                        this.ibkrRowCount = 0;
+                        this.ibkrError = null;
+                        this.$refs.ibkrInput.value = '';
+
+                        this.manualCashEntries = [];
+                        this.realisedProfits = { t212: 0, ibkr: 0 };
+
+                        // Clear localStorage
+                        localStorage.removeItem('portfolioAggregator');
+
+                        // Add back one empty manual cash entry
+                        this.addManualCash();
+                    }
+                }
+            },
+            mounted() {
+                // Add one empty manual cash entry by default if no saved data
+                if (this.manualCashEntries.length === 0) {
+                    this.addManualCash();
+                }
+
+                // Close column selector when clicking outside
+                document.addEventListener('click', (e) => {
+                    const columnSelectorButton = e.target.closest('.relative');
+                    if (this.showColumnSelector && !columnSelectorButton) {
+                        this.showColumnSelector = false;
+                    }
+                });
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

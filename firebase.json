@@ -1,0 +1,32 @@
+{
+  "functions": {
+    "source": "functions"
+  },
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "**/functions/**",
+      "index.html"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index-pwa.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/service-worker.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
+    ]
+  }
+}
