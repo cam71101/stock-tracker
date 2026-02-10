@@ -1,10 +1,22 @@
 const functions = require("firebase-functions");
 const fetch = require("node-fetch");
 
+const ALLOWED_ORIGINS = [
+  "https://portfolio-aggregator-fb32a.web.app",
+  "https://portfolio-aggregator-fb32a.firebaseapp.com",
+  "http://localhost:5000",
+  "http://127.0.0.1:5000"
+];
+
+const SYMBOL_PATTERN = /^[A-Za-z0-9.^=\-]{1,20}$/;
+
 exports.getStockPrice = functions.https.onRequest(async (req, res) => {
-  // Set CORS headers
-  res.set("Access-Control-Allow-Origin", "*");
-  res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  // Set CORS headers — restrict to known origins
+  const origin = req.headers.origin;
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.set("Access-Control-Allow-Origin", origin);
+  }
+  res.set("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.set("Access-Control-Allow-Headers", "Content-Type");
 
   // Handle preflight
@@ -16,6 +28,11 @@ exports.getStockPrice = functions.https.onRequest(async (req, res) => {
   const symbol = req.query.symbol;
   if (!symbol) {
     res.status(400).json({ error: "Missing symbol parameter" });
+    return;
+  }
+
+  if (!SYMBOL_PATTERN.test(symbol)) {
+    res.status(400).json({ error: "Invalid symbol format" });
     return;
   }
 
@@ -34,8 +51,20 @@ exports.getStockPrice = functions.https.onRequest(async (req, res) => {
     }
 
     const data = await response.json();
-    res.json(data);
+
+    // Filter response — only return the fields the client needs
+    const meta = data?.chart?.result?.[0]?.meta;
+    if (!meta || !meta.regularMarketPrice) {
+      res.status(404).json({ error: "No price data found for symbol" });
+      return;
+    }
+
+    res.json({
+      regularMarketPrice: meta.regularMarketPrice,
+      currency: meta.currency || "USD",
+      symbol: meta.symbol || symbol
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });

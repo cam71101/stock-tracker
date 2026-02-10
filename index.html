@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portfolio Aggregator</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://unpkg.com/vue@3.5.28/dist/vue.global.js" integrity="sha384-wnGtVZYd19ZTuarGUIotKU1XHhyQZyufn6NKf58XymsPoQvKDxaT2COTn9BRU6k6" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" integrity="sha384-D/t0ZMqQW31H3az8ktEiNb39wyKnS82iFY52QPACM+IjKW3jDUhyIgh2PApRqJZs" crossorigin="anonymous"></script>
 </head>
 <body class="bg-gray-50 min-h-screen">
     <div id="app" class="container mx-auto px-4 py-8">
@@ -743,43 +743,43 @@
             watch: {
                 t212Holdings: {
                     handler() {
-                        this.saveToStorage();
+                        this.debouncedSave();
                     },
                     deep: true
                 },
                 ibkrHoldings: {
                     handler() {
-                        this.saveToStorage();
+                        this.debouncedSave();
                     },
                     deep: true
                 },
                 manualCashEntries: {
                     handler() {
-                        this.saveToStorage();
+                        this.debouncedSave();
                     },
                     deep: true
                 },
                 targetValue() {
-                    this.saveToStorage();
+                    this.debouncedSave();
                 },
                 targetPercentages: {
                     handler() {
-                        this.saveToStorage();
+                        this.debouncedSave();
                     },
                     deep: true
                 },
                 targetCashPercentage() {
-                    this.saveToStorage();
+                    this.debouncedSave();
                 },
                 visibleColumns: {
                     handler() {
-                        this.saveToStorage();
+                        this.debouncedSave();
                     },
                     deep: true
                 },
                 realisedProfits: {
                     handler() {
-                        this.saveToStorage();
+                        this.debouncedSave();
                     },
                     deep: true
                 }
@@ -886,7 +886,7 @@
 
                         holdings.forEach(h => {
                             h.percentInvested = h.costBasisGBP ? (h.costBasisGBP / this.targetValue) * 100 : 0;
-                            h.percentCurrent = (h.valueGBP / this.targetValue) * 100;
+                            h.percentCurrent = this.targetValue > 0 ? (h.valueGBP / this.targetValue) * 100 : 0;
                             const targetPct = parseFloat(this.targetPercentages[h.symbol]) || 0;
                             h.percentDiff = h.percentInvested - targetPct;
 
@@ -1036,7 +1036,7 @@
                     this.t212Holdings = [];
                     this.t212RowCount = 0;
                     this.t212Error = null;
-                    this.$refs.t212Input.value = '';
+                    if (this.$refs.t212Input) this.$refs.t212Input.value = '';
                 },
 
                 clearIBKR() {
@@ -1044,7 +1044,7 @@
                     this.ibkrHoldings = [];
                     this.ibkrRowCount = 0;
                     this.ibkrError = null;
-                    this.$refs.ibkrInput.value = '';
+                    if (this.$refs.ibkrInput) this.$refs.ibkrInput.value = '';
                 },
 
                 // CSV Parsers
@@ -1258,7 +1258,7 @@
 
                         // Calculate P/L metrics
                         const costBasisGBP = pos.totalCostGBP;
-                        const avgPriceGBP = costBasisGBP / pos.totalShares;
+                        const avgPriceGBP = pos.totalShares > 0 ? costBasisGBP / pos.totalShares : 0;
                         const unrealizedPL = valueGBP - costBasisGBP;
                         const unrealizedPLPercent = costBasisGBP > 0 ? (unrealizedPL / costBasisGBP) * 100 : 0;
 
@@ -1388,6 +1388,7 @@
 
                         if (section === 'Open Positions') {
                             if (rowType === 'Data') {
+                                if (row.length <= 11) continue;
                                 // Position row: [section, type, discriminator, asset, currency, symbol, qty, mult, cost, basis, close, value, ...]
                                 const currency = row[4];
                                 const symbol = row[5];
@@ -1398,6 +1399,7 @@
                                     positions.push({ symbol, quantity, value, currency });
                                 }
                             } else if (rowType === 'Total') {
+                                if (row.length <= 11) continue;
                                 // Subtotal row - value is in column 11
                                 const currency = row[4];
                                 const totalValue = parseFloat(String(row[11] || '').replace(/,/g, '')) || 0;
@@ -1435,6 +1437,7 @@
                         if (section === 'Realized & Unrealized Performance Summary' &&
                             rowType === 'Data' &&
                             assetClass === 'Stocks') {
+                            if (row.length <= 14) continue;
                             const symbol = row[3];
                             // Realised P/L is typically in column 10 (Realized Total)
                             const realisedTotal = parseFloat(String(row[10] || '').replace(/,/g, '')) || 0;
@@ -1470,7 +1473,7 @@
                         // Get P/L data if available (already in GBP from IBKR)
                         const unrealizedPL = performanceData[pos.symbol] || 0;
                         const costBasisGBP = valueGBP - unrealizedPL;
-                        const avgPriceGBP = costBasisGBP / pos.quantity;
+                        const avgPriceGBP = pos.quantity > 0 ? costBasisGBP / pos.quantity : 0;
                         const unrealizedPLPercent = costBasisGBP > 0 ? (unrealizedPL / costBasisGBP) * 100 : 0;
 
                         holdings.push({
@@ -1770,7 +1773,7 @@
                             this.ibkrHoldings = this.ibkrHoldings.filter(h => h.symbol !== holding.symbol);
                         } else if (holding.source === 'manual') {
                             // Remove from manual holdings
-                            this.manualHoldings = this.manualHoldings.filter(h => h.symbol !== holding.symbol);
+                            this.manualCashEntries = this.manualCashEntries.filter(h => h.symbol !== holding.symbol);
                         }
                     }
                 },
@@ -1782,6 +1785,7 @@
 
                 // Asset allocation pie chart
                 getAssetAllocationGradient() {
+                    const DEGREES_PER_PERCENT = 360 / 100;
                     const cash = this.portfolio.cashPercentage;
                     const vusa = this.portfolio.vusaPercentage;
                     const other = this.portfolio.otherStocksPercentage;
@@ -1791,26 +1795,31 @@
 
                     // Cash (green)
                     if (cash > 0) {
-                        const angle = cash * 3.6;
+                        const angle = cash * DEGREES_PER_PERCENT;
                         stops.push(`#10b981 ${currentAngle}deg ${currentAngle + angle}deg`);
                         currentAngle += angle;
                     }
 
                     // VUSA (purple)
                     if (vusa > 0) {
-                        const angle = vusa * 3.6;
+                        const angle = vusa * DEGREES_PER_PERCENT;
                         stops.push(`#8b5cf6 ${currentAngle}deg ${currentAngle + angle}deg`);
                         currentAngle += angle;
                     }
 
                     // Other stocks (blue)
                     if (other > 0) {
-                        const angle = other * 3.6;
+                        const angle = other * DEGREES_PER_PERCENT;
                         stops.push(`#3b82f6 ${currentAngle}deg ${currentAngle + angle}deg`);
                         currentAngle += angle;
                     }
 
                     return `conic-gradient(${stops.join(', ')})`;
+                },
+
+                debouncedSave() {
+                    clearTimeout(this._saveTimer);
+                    this._saveTimer = setTimeout(() => this.saveToStorage(), 300);
                 },
 
                 // LocalStorage management
@@ -1856,13 +1865,13 @@
                         this.t212Holdings = [];
                         this.t212RowCount = 0;
                         this.t212Error = null;
-                        this.$refs.t212Input.value = '';
+                        if (this.$refs.t212Input) this.$refs.t212Input.value = '';
 
                         this.ibkrFile = null;
                         this.ibkrHoldings = [];
                         this.ibkrRowCount = 0;
                         this.ibkrError = null;
-                        this.$refs.ibkrInput.value = '';
+                        if (this.$refs.ibkrInput) this.$refs.ibkrInput.value = '';
 
                         this.manualCashEntries = [];
                         this.realisedProfits = { t212: 0, ibkr: 0 };

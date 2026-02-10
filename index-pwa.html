@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portfolio Aggregator</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://unpkg.com/vue@3.5.28/dist/vue.global.js" integrity="sha384-wnGtVZYd19ZTuarGUIotKU1XHhyQZyufn6NKf58XymsPoQvKDxaT2COTn9BRU6k6" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" integrity="sha384-D/t0ZMqQW31H3az8ktEiNb39wyKnS82iFY52QPACM+IjKW3jDUhyIgh2PApRqJZs" crossorigin="anonymous"></script>
 
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -1746,6 +1746,10 @@
                         console.error('Firebase load error:', error);
                         this.syncStatus = 'error';
                         this.syncError = 'Load error: ' + error.message;
+                    } finally {
+                        // Always allow syncing after initial load attempt,
+                        // even on failure — prevents permanent sync block
+                        this._hasLoadedFromCloud = true;
                     }
                 },
 
@@ -2151,13 +2155,13 @@
                                 }
 
                                 const data = await response.json();
-                                const quote = data?.chart?.result?.[0]?.meta;
 
-                                if (quote?.regularMarketPrice) {
+                                // Cloud Function now returns filtered response directly
+                                if (data?.regularMarketPrice) {
                                     return {
                                         symbol: originalSymbol,
-                                        price: quote.regularMarketPrice,
-                                        currency: quote.currency || 'USD'
+                                        price: data.regularMarketPrice,
+                                        currency: data.currency || 'USD'
                                     };
                                 }
                             } catch (e) {
@@ -3059,6 +3063,7 @@
 
                         if (section === 'Open Positions') {
                             if (rowType === 'Data') {
+                                if (row.length <= 11) continue;
                                 // Position row: [section, type, discriminator, asset, currency, symbol, qty, mult, cost, basis, close, value, ...]
                                 const currency = row[4];
                                 const symbol = row[5];
@@ -3069,6 +3074,7 @@
                                     positions.push({ symbol, quantity, value, currency });
                                 }
                             } else if (rowType === 'Total') {
+                                if (row.length <= 11) continue;
                                 // Subtotal row - value is in column 11
                                 const currency = row[4];
                                 const totalValue = parseFloat(String(row[11] || '').replace(/,/g, '')) || 0;
@@ -3106,6 +3112,7 @@
                         if (section === 'Realized & Unrealized Performance Summary' &&
                             rowType === 'Data' &&
                             assetClass === 'Stocks') {
+                            if (row.length <= 14) continue;
                             const symbol = row[3];
                             // Realised P/L is typically in column 10 (Realized Total)
                             const realisedTotal = parseFloat(String(row[10] || '').replace(/,/g, '')) || 0;
@@ -3195,7 +3202,9 @@
                             tx.costGBP = (tx.costNative || 0) * conversionFactor;
                             tx.proceedsGBP = (tx.proceedsNative || 0) * conversionFactor;
                         } else {
-                            // Fallback: use default USD rate (1.27)
+                            // Fallback: use default rates (may be stale)
+                            console.warn('Using fallback exchange rate for', tx.currency, '- rates may be stale');
+                            this.exchangeRateError = 'Using fallback exchange rates - prices may be inaccurate';
                             const fallbackRate = tx.currency === 'USD' ? 1.27 :
                                                  tx.currency === 'EUR' ? 1.17 :
                                                  tx.currency === 'CAD' ? 1.78 : 1;
@@ -3714,6 +3723,7 @@
 
                 // Asset allocation pie chart
                 getAssetAllocationGradient() {
+                    const DEGREES_PER_PERCENT = 360 / 100;
                     const cash = this.portfolio.cashPercentage;
                     const vusa = this.portfolio.vusaPercentage;
                     const other = this.portfolio.otherStocksPercentage;
@@ -3723,21 +3733,21 @@
 
                     // Cash (green)
                     if (cash > 0) {
-                        const angle = cash * 3.6;
+                        const angle = cash * DEGREES_PER_PERCENT;
                         stops.push(`#10b981 ${currentAngle}deg ${currentAngle + angle}deg`);
                         currentAngle += angle;
                     }
 
                     // VUSA (purple)
                     if (vusa > 0) {
-                        const angle = vusa * 3.6;
+                        const angle = vusa * DEGREES_PER_PERCENT;
                         stops.push(`#8b5cf6 ${currentAngle}deg ${currentAngle + angle}deg`);
                         currentAngle += angle;
                     }
 
                     // Other stocks (blue)
                     if (other > 0) {
-                        const angle = other * 3.6;
+                        const angle = other * DEGREES_PER_PERCENT;
                         stops.push(`#3b82f6 ${currentAngle}deg ${currentAngle + angle}deg`);
                         currentAngle += angle;
                     }
@@ -3770,13 +3780,13 @@
                         this.t212Holdings = [];
                         this.t212RowCount = 0;
                         this.t212Error = null;
-                        this.$refs.t212Input.value = '';
+                        if (this.$refs.t212Input) this.$refs.t212Input.value = '';
 
                         this.ibkrFile = null;
                         this.ibkrHoldings = [];
                         this.ibkrRowCount = 0;
                         this.ibkrError = null;
-                        this.$refs.ibkrInput.value = '';
+                        if (this.$refs.ibkrInput) this.$refs.ibkrInput.value = '';
 
                         // Clear manual stock holdings
                         this.manualHoldings = [];

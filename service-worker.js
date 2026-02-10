@@ -27,7 +27,7 @@ if (workbox) {
 
     // Pre-cache local assets only (cross-origin resources cannot be precached)
     workbox.precaching.precacheAndRoute([
-        {url: '/index-pwa.html', revision: '1'}
+        {url: '/index-pwa.html', revision: '2026-02-10'}
     ]);
 
     // Runtime cache for cross-origin CDN resources
