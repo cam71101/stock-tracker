@@ -8,8 +8,7 @@
       "firebase.json",
       "**/.*",
       "**/node_modules/**",
-      "**/functions/**",
-      "index.html"
+      "**/functions/**"
     ],
     "rewrites": [
       {
